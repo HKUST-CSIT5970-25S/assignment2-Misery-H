@@ -2,6 +2,7 @@ package hk.ust.csit5970;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.Map;
 
 import org.apache.commons.cli.CommandLine;
@@ -51,15 +52,28 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			String line = ((Text) value).toString();
 			String[] words = line.trim().split("\\s+");
 
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			if (words.length > 1){
+				KEY.set( words[0]);
+				for (int i = 1; i < words.length; i++) {
+					STRIPE.increment("");
+					context.write(KEY,STRIPE);
+					STRIPE.clear();
+
+					String w = words[i];
+					// Skip empty words
+					if (w.length() == 0) {
+						continue;
+					}
+					STRIPE.increment(w);
+					context.write(KEY, STRIPE);
+					KEY.set(w);
+					STRIPE.clear();
+				}
+			}
 		}
 	}
 
-	/*
-	 * TODO: write your reducer to aggregate all stripes associated with each key
-	 */
+
 	private static class MyReducer extends
 			Reducer<Text, HashMapStringIntWritable, PairOfStrings, FloatWritable> {
 
@@ -72,9 +86,29 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 		public void reduce(Text key,
 				Iterable<HashMapStringIntWritable> stripes, Context context)
 				throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			Iterator<HashMapStringIntWritable> iter = stripes.iterator();
+			String first_w = key.toString();
+
+			while (iter.hasNext()) {
+
+				SUM_STRIPES.plus(iter.next());
+			}
+			Integer base = SUM_STRIPES.get("");
+			for (Map.Entry<String, Integer> mapElement : SUM_STRIPES.entrySet()) {
+				String second_w = (String) mapElement.getKey();
+				int value = (int) mapElement.getValue();
+				BIGRAM.set(first_w, second_w);
+				if(second_w.length()==0){
+					FREQ.set(value);
+					context.write(BIGRAM, FREQ);
+				}else{
+					FREQ.set((float)value/(float)base);
+					context.write(BIGRAM, FREQ);
+				}
+
+			}
+
+			SUM_STRIPES.clear();
 		}
 	}
 
@@ -91,9 +125,15 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 		public void reduce(Text key,
 				Iterable<HashMapStringIntWritable> stripes, Context context)
 				throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			Iterator<HashMapStringIntWritable> iter = stripes.iterator();
+
+			while (iter.hasNext()) {
+				for ( String second_w : iter.next().keySet() ) {
+					SUM_STRIPES.increment(second_w);
+				}
+			}
+			context.write(key, SUM_STRIPES);
+			SUM_STRIPES.clear();
 		}
 	}
 
