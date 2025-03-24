@@ -2,6 +2,7 @@ package hk.ust.csit5970;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Iterator;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -14,10 +15,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.FloatWritable;
-import org.apache.hadoop.io.IntWritable;
-import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
@@ -38,21 +36,35 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 	 * TODO: write your Mapper here.
 	 */
 	private static class MyMapper extends
-			Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
+			Mapper<LongWritable, Text, PairOfStrings, FloatWritable> {
 
 		// Reuse objects to save overhead of object creation.
-		private static final IntWritable ONE = new IntWritable(1);
+		private static final FloatWritable ONE = new FloatWritable(1);
 		private static final PairOfStrings BIGRAM = new PairOfStrings();
-
+		private final static Text WORD = new Text();
 		@Override
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
+
 			String line = ((Text) value).toString();
 			String[] words = line.trim().split("\\s+");
-			
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			if (words.length > 1){
+				String previous_word = words[0];
+
+				for (int i = 1; i < words.length; i++) {
+					String w = words[i];
+					// Skip empty words
+					if (w.length() == 0) {
+						continue;
+					}
+					BIGRAM.set(previous_word, w);
+					context.write(BIGRAM, ONE);
+					BIGRAM.set(previous_word,"");
+					context.write(BIGRAM, ONE);
+					previous_word = w;
+				}
+			}
+
 		}
 	}
 
@@ -60,43 +72,80 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 	 * TODO: Write your reducer here.
 	 */
 	private static class MyReducer extends
-			Reducer<PairOfStrings, IntWritable, PairOfStrings, FloatWritable> {
+			Reducer<PairOfStrings, FloatWritable, PairOfStrings, FloatWritable> {
 
 		// Reuse objects.
 		private final static FloatWritable VALUE = new FloatWritable();
+		//		private DoubleWritable result = new DoubleWritable();
+		private String currentLeftWord = "";
+		private double totalCount = 0.0;
 
 		@Override
-		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
-				Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+		public void reduce(PairOfStrings key, Iterable<FloatWritable> values,
+						   Context context) throws IOException, InterruptedException {
+
+			String leftWord = key.getLeftElement();
+			String rightWord = key.getRightElement();
+
+
+			if (!leftWord.equals(currentLeftWord)) {
+				currentLeftWord = leftWord;
+				totalCount = 0.0;
+			}
+
+			// 计算当前键的总计数值
+			float sum = 0.0f;
+			for (FloatWritable val : values) {
+				sum += val.get();
+			}
+
+			if (rightWord.length()==0) {
+				// 记录分母总计 (a, "")
+				totalCount = sum;
+				VALUE.set(sum);
+				context.write(key,VALUE);
+			} else {
+				// 处理实际bigram (a, b)
+				if (totalCount == 0) {
+					// 处理分母缺失的情况
+					context.getCounter("BigramStats", "MissingDenominator").increment(1);
+					return;
+				}
+
+				// 计算频率并输出
+				float frequency = (float) (sum / totalCount);
+				VALUE.set(frequency);
+				context.write(key, VALUE);
+			}
 		}
 	}
-	
 	private static class MyCombiner extends
-			Reducer<PairOfStrings, IntWritable, PairOfStrings, IntWritable> {
-		private static final IntWritable SUM = new IntWritable();
+			Reducer<PairOfStrings, FloatWritable, PairOfStrings, FloatWritable> {
+		private static final FloatWritable SUM = new FloatWritable();
 
 		@Override
-		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
+		public void reduce(PairOfStrings key, Iterable<FloatWritable> values,
 				Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			Iterator<FloatWritable> iter = values.iterator();
+			int sum = 0;
+			while (iter.hasNext()) {
+				sum += iter.next().get();
+			}
+			SUM.set(sum);
+			context.write(key, SUM);
 		}
 	}
+
 
 	/*
 	 * Partition bigrams based on their left elements
 	 */
 	private static class MyPartitioner extends
-			Partitioner<PairOfStrings, IntWritable> {
+			Partitioner<PairOfStrings, FloatWritable> {
 		@Override
-		public int getPartition(PairOfStrings key, IntWritable value,
+		public int getPartition(PairOfStrings key, FloatWritable value,
 				int numReduceTasks) {
-			return (key.getLeftElement().hashCode() & Integer.MAX_VALUE)
-					% numReduceTasks;
+			return (key.getLeftElement().hashCode() & Integer.MAX_VALUE) % numReduceTasks;
 		}
 	}
 
@@ -167,7 +216,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		FileOutputFormat.setOutputPath(job, new Path(outputPath));
 
 		job.setMapOutputKeyClass(PairOfStrings.class);
-		job.setMapOutputValueClass(IntWritable.class);
+		job.setMapOutputValueClass(FloatWritable.class);
 		job.setOutputKeyClass(PairOfStrings.class);
 		job.setOutputValueClass(FloatWritable.class);
 
