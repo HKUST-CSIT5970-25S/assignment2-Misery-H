@@ -33,6 +33,8 @@ public class CORStripes extends Configured implements Tool {
 	 */
 	private static class CORMapper1 extends
 			Mapper<LongWritable, Text, Text, IntWritable> {
+		private final static IntWritable ONE = new IntWritable(1);
+		private final static  Text COUNT = new Text();
 		@Override
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
@@ -40,22 +42,26 @@ public class CORStripes extends Configured implements Tool {
 			// Please use this tokenizer! DO NOT implement a tokenizer by yourself!
 			String clean_doc = value.toString().replaceAll("[^a-z A-Z]", " ");
 			StringTokenizer doc_tokenizer = new StringTokenizer(clean_doc);
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			while (doc_tokenizer.hasMoreTokens()) {
+				String word = doc_tokenizer.nextToken();
+				COUNT.set(word);
+				context.write(COUNT, ONE);
+			}
 		}
 	}
 
-	/*
-	 * TODO: Write your first-pass reducer here.
-	 */
+	private final static IntWritable SUM = new IntWritable();
 	private static class CORReducer1 extends
 			Reducer<Text, IntWritable, Text, IntWritable> {
 		@Override
 		public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			Iterator<IntWritable> iter = values.iterator();
+			int sum = 0;
+			while (iter.hasNext()) {
+				sum += iter.next().get();
+			}
+			SUM.set(sum);
+			context.write(key, SUM);
 		}
 	}
 
@@ -63,18 +69,39 @@ public class CORStripes extends Configured implements Tool {
 	 * TODO: Write your second-pass Mapper here.
 	 */
 	public static class CORStripesMapper2 extends Mapper<LongWritable, Text, Text, MapWritable> {
+		private static final Text KEY = new Text();
+		private static final IntWritable ONE = new IntWritable(1);
+
 		@Override
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 			Set<String> sorted_word_set = new TreeSet<String>();
-			// Please use this tokenizer! DO NOT implement a tokenizer by yourself!
+			// 使用给定的 tokenizer
 			String doc_clean = value.toString().replaceAll("[^a-z A-Z]", " ");
 			StringTokenizer doc_tokenizers = new StringTokenizer(doc_clean);
 			while (doc_tokenizers.hasMoreTokens()) {
 				sorted_word_set.add(doc_tokenizers.nextToken());
 			}
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+
+			HashSet<PairOfStrings> seenPairs = new HashSet<PairOfStrings>();
+			ArrayList<String> wordList = new ArrayList<String>(sorted_word_set);
+			Collections.sort(wordList);
+
+			for (int i = 0; i < wordList.size(); i++) {
+				KEY.set(wordList.get(i));
+				MapWritable STRIPE = new MapWritable();  // 每次都新建一个 MapWritable
+
+				for (int j = i + 1; j < wordList.size(); j++) {
+					PairOfStrings pair = new PairOfStrings(wordList.get(i), wordList.get(j));
+					if (!seenPairs.contains(pair)) {
+						seenPairs.add(pair);
+						STRIPE.put(new Text(wordList.get(j)), ONE);
+					}
+				}
+
+				if (!STRIPE.isEmpty()) {
+					context.write(KEY, STRIPE);
+				}
+			}
 		}
 	}
 
@@ -83,12 +110,28 @@ public class CORStripes extends Configured implements Tool {
 	 */
 	public static class CORStripesCombiner2 extends Reducer<Text, MapWritable, Text, MapWritable> {
 		static IntWritable ZERO = new IntWritable(0);
-
+		private final static MapWritable SUM_STRIPES = new MapWritable();
 		@Override
 		protected void reduce(Text key, Iterable<MapWritable> values, Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			SUM_STRIPES.clear();
+
+			for (MapWritable stripe : values) {
+				for (Writable neighbor : stripe.keySet()) {
+					IntWritable count = (IntWritable) stripe.get(neighbor);
+
+					// 如果 `neighbor` 已经在 `SUM_STRIPES` 中，则累加计数
+					if (SUM_STRIPES.containsKey(neighbor)) {
+						IntWritable oldCount = (IntWritable) SUM_STRIPES.get(neighbor);
+						SUM_STRIPES.put(neighbor, new IntWritable(oldCount.get() + count.get()));
+					} else {
+						// 如果 `neighbor` 还不存在，则直接存入
+						SUM_STRIPES.put(neighbor, new IntWritable(count.get()));
+					}
+				}
+			}
+
+			// 输出合并后的结果
+			context.write(key, SUM_STRIPES);
 		}
 	}
 
@@ -139,9 +182,47 @@ public class CORStripes extends Configured implements Tool {
 		 */
 		@Override
 		protected void reduce(Text key, Iterable<MapWritable> values, Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+			Map<String, Integer> stripeSum = new HashMap<String,Integer>();
+
+			// 遍历所有 MapWritable（来自 Combiner）
+			for (MapWritable stripe : values) {
+				for (Writable neighbor : stripe.keySet()) {
+					String neighborStr = neighbor.toString();
+					int count = ((IntWritable) stripe.get(neighbor)).get();
+
+					// 累加 (A, B) 计数
+					if (stripeSum.containsKey(neighborStr)) {
+						stripeSum.put(neighborStr, stripeSum.get(neighborStr) + count);
+					} else {
+						stripeSum.put(neighborStr, count);
+					}
+
+				}
+			}
+
+			// 获取 Freq(A)（当前 key 对应的词频）
+			String wordA = key.toString();
+			if (!word_total_map.containsKey(wordA)) {
+				return; // 若缺少 Freq(A)，则无法计算，直接跳过
+			}
+			int freqA = word_total_map.get(wordA);
+
+			// 遍历累积的 (A, B) 统计值
+			for (Map.Entry<String, Integer> entry : stripeSum.entrySet()) {
+				String wordB = entry.getKey();
+				int freqAB = entry.getValue(); // 共同出现次数 Freq(A, B)
+
+				if (!word_total_map.containsKey(wordB)) {
+					continue; // 若缺少 Freq(B)，则无法计算，跳过
+				}
+				int freqB = word_total_map.get(wordB);
+
+				// 计算相关性
+				double correlation = (double) freqAB / (freqA * freqB);
+
+				// 输出 <(A, B), COR(A, B)>
+				context.write(new PairOfStrings(wordA, wordB), new DoubleWritable(correlation));
+			}
 		}
 	}
 
