@@ -36,10 +36,10 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 	 * TODO: write your Mapper here.
 	 */
 	private static class MyMapper extends
-			Mapper<LongWritable, Text, PairOfStrings, FloatWritable> {
+			Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
 
 		// Reuse objects to save overhead of object creation.
-		private static final FloatWritable ONE = new FloatWritable(1);
+		private static final IntWritable ONE = new IntWritable(1);
 		private static final PairOfStrings BIGRAM = new PairOfStrings();
 		private final static Text WORD = new Text();
 		@Override
@@ -72,7 +72,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 	 * TODO: Write your reducer here.
 	 */
 	private static class MyReducer extends
-			Reducer<PairOfStrings, FloatWritable, PairOfStrings, FloatWritable> {
+			Reducer<PairOfStrings, IntWritable, PairOfStrings, FloatWritable> {
 
 		// Reuse objects.
 		private final static FloatWritable VALUE = new FloatWritable();
@@ -81,7 +81,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		private double totalCount = 0.0;
 
 		@Override
-		public void reduce(PairOfStrings key, Iterable<FloatWritable> values,
+		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
 						   Context context) throws IOException, InterruptedException {
 
 			String leftWord = key.getLeftElement();
@@ -95,7 +95,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 
 			// 计算当前键的总计数值
 			float sum = 0.0f;
-			for (FloatWritable val : values) {
+			for (IntWritable val : values) {
 				sum += val.get();
 			}
 
@@ -120,13 +120,13 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		}
 	}
 	private static class MyCombiner extends
-			Reducer<PairOfStrings, FloatWritable, PairOfStrings, FloatWritable> {
-		private static final FloatWritable SUM = new FloatWritable();
+			Reducer<PairOfStrings, IntWritable, PairOfStrings, IntWritable> {
+		private static final IntWritable SUM = new IntWritable();
 
 		@Override
-		public void reduce(PairOfStrings key, Iterable<FloatWritable> values,
-				Context context) throws IOException, InterruptedException {
-			Iterator<FloatWritable> iter = values.iterator();
+		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
+						   Context context) throws IOException, InterruptedException {
+			Iterator<IntWritable> iter = values.iterator();
 			int sum = 0;
 			while (iter.hasNext()) {
 				sum += iter.next().get();
@@ -141,9 +141,9 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 	 * Partition bigrams based on their left elements
 	 */
 	private static class MyPartitioner extends
-			Partitioner<PairOfStrings, FloatWritable> {
+			Partitioner<PairOfStrings, IntWritable> {
 		@Override
-		public int getPartition(PairOfStrings key, FloatWritable value,
+		public int getPartition(PairOfStrings key, IntWritable value,
 				int numReduceTasks) {
 			return (key.getLeftElement().hashCode() & Integer.MAX_VALUE) % numReduceTasks;
 		}
@@ -216,7 +216,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		FileOutputFormat.setOutputPath(job, new Path(outputPath));
 
 		job.setMapOutputKeyClass(PairOfStrings.class);
-		job.setMapOutputValueClass(FloatWritable.class);
+		job.setMapOutputValueClass(IntWritable.class);
 		job.setOutputKeyClass(PairOfStrings.class);
 		job.setOutputValueClass(FloatWritable.class);
 
