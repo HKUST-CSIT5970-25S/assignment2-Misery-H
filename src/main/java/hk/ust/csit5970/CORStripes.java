@@ -28,9 +28,7 @@ import java.util.*;
 public class CORStripes extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(CORStripes.class);
 
-	/*
-	 * TODO: write your first-pass Mapper here.
-	 */
+
 	private static class CORMapper1 extends
 			Mapper<LongWritable, Text, Text, IntWritable> {
 		private final static IntWritable ONE = new IntWritable(1);
@@ -65,9 +63,6 @@ public class CORStripes extends Configured implements Tool {
 		}
 	}
 
-	/*
-	 * TODO: Write your second-pass Mapper here.
-	 */
 	public static class CORStripesMapper2 extends Mapper<LongWritable, Text, Text, MapWritable> {
 		private static final Text KEY = new Text();
 		private static final IntWritable ONE = new IntWritable(1);
@@ -75,7 +70,6 @@ public class CORStripes extends Configured implements Tool {
 		@Override
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 			Set<String> sorted_word_set = new TreeSet<String>();
-			// 使用给定的 tokenizer
 			String doc_clean = value.toString().replaceAll("[^a-z A-Z]", " ");
 			StringTokenizer doc_tokenizers = new StringTokenizer(doc_clean);
 			while (doc_tokenizers.hasMoreTokens()) {

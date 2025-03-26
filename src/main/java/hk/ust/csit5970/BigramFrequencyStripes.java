@@ -90,7 +90,6 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			String first_w = key.toString();
 
 			while (iter.hasNext()) {
-
 				SUM_STRIPES.plus(iter.next());
 			}
 			Integer base = SUM_STRIPES.get("");
@@ -112,9 +111,7 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 		}
 	}
 
-	/*
-	 * TODO: Write your combiner to aggregate all stripes with the same key
-	 */
+
 	private static class MyCombiner
 			extends
 			Reducer<Text, HashMapStringIntWritable, Text, HashMapStringIntWritable> {

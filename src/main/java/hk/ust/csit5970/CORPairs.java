@@ -78,9 +78,6 @@ public class CORPairs extends Configured implements Tool {
 	}
 
 
-	/*
-	 * TODO: Write your second-pass Mapper here.
-	 */
 	public static class CORPairsMapper2 extends Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
 		private final static IntWritable ONE = new IntWritable(1);
 		private final static PairOfStrings pair = new PairOfStrings();
@@ -113,9 +110,7 @@ public class CORPairs extends Configured implements Tool {
 		}
 	}
 
-	/*
-	 * TODO: Write your second-pass Combiner here.
-	 */
+
 	private static class CORPairsCombiner2 extends Reducer<PairOfStrings, IntWritable, PairOfStrings, IntWritable> {
 		@Override
 		protected void reduce(PairOfStrings key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
@@ -189,7 +184,7 @@ public class CORPairs extends Configured implements Tool {
 			String wordB = key.getRightElement();
 
 			if (!word_total_map.containsKey(wordA) || !word_total_map.containsKey(wordB)) {
-				return; // 如果找不到 Freq(A) 或 Freq(B)，跳过该对
+				return;
 			}
 
 			int freqA = word_total_map.get(wordA);

@@ -32,16 +32,13 @@ import org.apache.log4j.Logger;
 public class BigramFrequencyPairs extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(BigramFrequencyPairs.class);
 
-	/*
-	 * TODO: write your Mapper here.
-	 */
+
 	private static class MyMapper extends
 			Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
 
 		// Reuse objects to save overhead of object creation.
 		private static final IntWritable ONE = new IntWritable(1);
 		private static final PairOfStrings BIGRAM = new PairOfStrings();
-		private final static Text WORD = new Text();
 		@Override
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
@@ -57,10 +54,13 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 					if (w.length() == 0) {
 						continue;
 					}
+					//Get the pair(prev,next)
+					//do twice write to record No. of prev and No. of pairs
 					BIGRAM.set(previous_word, w);
 					context.write(BIGRAM, ONE);
 					BIGRAM.set(previous_word,"");
 					context.write(BIGRAM, ONE);
+					//update prev
 					previous_word = w;
 				}
 			}
@@ -68,15 +68,12 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		}
 	}
 
-	/*
-	 * TODO: Write your reducer here.
-	 */
+
 	private static class MyReducer extends
 			Reducer<PairOfStrings, IntWritable, PairOfStrings, FloatWritable> {
 
 		// Reuse objects.
 		private final static FloatWritable VALUE = new FloatWritable();
-		//		private DoubleWritable result = new DoubleWritable();
 		private String currentLeftWord = "";
 		private double totalCount = 0.0;
 
@@ -87,32 +84,32 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 			String leftWord = key.getLeftElement();
 			String rightWord = key.getRightElement();
 
-
+			//get current key because partition projects (word,other) and (word,"") to this reducer
 			if (!leftWord.equals(currentLeftWord)) {
 				currentLeftWord = leftWord;
 				totalCount = 0.0;
 			}
 
-			// 计算当前键的总计数值
+			// calc current sum
 			float sum = 0.0f;
 			for (IntWritable val : values) {
 				sum += val.get();
 			}
 
 			if (rightWord.length()==0) {
-				// 记录分母总计 (a, "")
+				// (a, "") will always greater than (a,"other")
 				totalCount = sum;
 				VALUE.set(sum);
 				context.write(key,VALUE);
 			} else {
-				// 处理实际bigram (a, b)
+				// for other bigram (a, b)
 				if (totalCount == 0) {
 					// 处理分母缺失的情况
 					context.getCounter("BigramStats", "MissingDenominator").increment(1);
 					return;
 				}
 
-				// 计算频率并输出
+
 				float frequency = (float) (sum / totalCount);
 				VALUE.set(frequency);
 				context.write(key, VALUE);
@@ -127,6 +124,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
 						   Context context) throws IOException, InterruptedException {
 			Iterator<IntWritable> iter = values.iterator();
+			//do the same as the reducer
 			int sum = 0;
 			while (iter.hasNext()) {
 				sum += iter.next().get();
